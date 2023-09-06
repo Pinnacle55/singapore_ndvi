@@ -1,0 +1,10 @@
+# ignore tifs
+# An asterisk is a wildcard that matches zero or more characters. 
+*.tif
+*.jp2
+
+# Don't track anything in sentinel folders
+S2*
+
+# Don't track ipynb checkpoints
+.ipynb_checkpoints/*

@@ -64,7 +64,7 @@ ee.logout()
 
 Nevertheless, Landsat data is almost always available, allowing you to start working on it almost immediately.
 
-## Singapore Suburbs Shapefile
+## Singapore Suburbs Shapefile - Data Collection and Cleaning
 
 [OpenStreetMaps (OSM)](https://www.openstreetmap.org/) is probably the best place to go to collect data on administrative areas, transport routes, etc. Although they are more likely to be higher resolution shape files that can be found on governmental websites in specific countries, etc. OSM has an extremely wide reach. 
 
@@ -99,7 +99,14 @@ sg_suburbs.apply(lambda x: ax.annotate(text = x["name"],
 plt.show();
 ```
 
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/e2a85064a101a4fae224aa6925a371ae6b659664/Images/Singapore%20Shapefile%20Cleaning%20-%20Missing%20Area.png?raw=True "Missing data")
 
+Another quick and easy way to find missing data is to run `sg_suburbs.unary_union`. This generates a Polygon that is very good at highlighting missing areas as shown below:
+
+
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/e2a85064a101a4fae224aa6925a371ae6b659664/Images/Singapore%20Unary%20Union%20-%20Missing%20Data.png?raw=True "Unary union")
+
+We can see that not only is there a small area missing but there are very small gaps between polygons, likely between the edges of adjacent polygons - these should be filled in prior to analysis.
 
 ## Data Preprocessing
 

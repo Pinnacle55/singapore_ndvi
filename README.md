@@ -70,6 +70,37 @@ Nevertheless, Landsat data is almost always available, allowing you to start wor
 
 The OSM API can be a bit tricky to use - thankfully, there is a service called [Overpass Turbo](https://overpass-turbo.eu/) that makes querying and downloading OSM data much easier. My general workflow is to use the OSM website to find the specific feature that I'm interested in (for example, a specific administrative boundary level or a specific rail line) and then using Overpass Turbo to download that data over the entirety of the study area.
 
+However, because the OSM data is user-submitted, it is important to clean it beforehand in order to make sure that it is usable for our future analyses. The shapefile cleaning workflow can be found in `Singapore Geopandas Cleaning.ipynb`.
+The first thing to do is to switch the CRS of the zip file to an appropriate CRS. Ideally, you want the CRS to be in a reference system measured in meters. 
+
+
+```
+# note that this is in epsg 4326
+sg = gpd.read_file("singapore.geojson")
+
+# First, convert to UTM 48N to get values in meters
+sg = sg.to_crs("EPSG:32648")
+```
+
+You can then start the cleaning process - for example OSM data often comes with a lot of information that is not particularly useful, such as the name of the Polygon in a different language. In most cases you can subset the columns of the Geopandas dataframe into just `name` and `geometry`. OSM data may also contain duplicates, which should be dropped.
+In general, it is good to constantly visualize your shapefile to identify any potential errors. For example, a quick visualization of the OSM data reveals that there is a suburb missing. It turns out that the area in question had been subsumed into an adjacent suburb a few years prior.
+
+```
+sg_suburbs = sg[sg["place"] == "suburb"][["name", "geometry"]]
+
+# quick visualization
+fig, ax = plt.subplots(figsize = (20,24))
+sg_suburbs.plot(ax = ax, edgecolor = "black")
+
+# quick and easy way to annotate names of administrative areas
+sg_suburbs.apply(lambda x: ax.annotate(text = x["name"], 
+                                       xy = x["geometry"].centroid.coords[0],
+                                       ha = "center"), axis = 1)
+plt.show();
+```
+
+
+
 ## Data Preprocessing
 
 Regardless of whether you are using Sentinel 2 or Landsat 8 data, you should always conduct some basic preprocessing in order to reduce the amount of storage required for your projects as well as ensure that your projects are in a file format that is more conducive to subsequent analysis.

@@ -1,6 +1,6 @@
 # Singapore NDVI Project
 
-This project investigates the use of cloud masks to remove clouds while calculating NDVI over time. This project uses Singapore as a case study.
+This project investigates the use of cloud masks to remove clouds while calculating NDVI over time in each administrative zone. This project uses Singapore as a case study.
 
 ![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/21cdd54fbf4aa55f0ac759e48e97c2c7ac91b59a/Images/Singapore%20S2%20Cloudless%20Cloud%20Mask.png?raw=True "Cover Page")
 
@@ -61,3 +61,17 @@ for scene in lines:
 
 ee.logout()
 ```
+
+Nevertheless, Landsat data is almost always available, allowing you to start working on it almost immediately.
+
+## Singapore Suburbs Shapefile
+
+[OpenStreetMaps (OSM)](https://www.openstreetmap.org/) is probably the best place to go to collect data on administrative areas, transport routes, etc. Although they are more likely to be higher resolution shape files that can be found on governmental websites in specific countries, etc. OSM has an extremely wide reach. 
+
+The OSM API can be a bit tricky to use - thankfully, there is a service called [Overpass Turbo](https://overpass-turbo.eu/) that makes querying and downloading OSM data much easier. My general workflow is to use the OSM website to find the specific feature that I'm interested in (for example, a specific administrative boundary level or a specific rail line) and then using Overpass Turbo to download that data over the entirety of the study area.
+
+## Data Preprocessing
+
+Regardless of whether you are using Sentinel 2 or Landsat 8 data, you should always conduct some basic preprocessing in order to reduce the amount of storage required for your projects as well as ensure that your projects are in a file format that is more conducive to subsequent analysis.
+
+The first thing that you should do is crop your data to your study area - this can significantly reduce the size of your raster files.

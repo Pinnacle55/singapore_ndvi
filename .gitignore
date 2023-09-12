@@ -6,5 +6,8 @@
 # Don't track anything in sentinel folders
 S2*
 
-# Don't track ipynb checkpoints
+# don't track the checkpoints
 .ipynb_checkpoints/*
+
+# don't track anything in the data folder
+data/*

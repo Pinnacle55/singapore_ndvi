@@ -2,6 +2,8 @@
 
 This project investigates the use of cloud masks to remove clouds while calculating NDVI over time. This project uses Singapore as a case study.
 
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/21cdd54fbf4aa55f0ac759e48e97c2c7ac91b59a/Images/Singapore%20S2%20Cloudless%20Cloud%20Mask.png?raw=True "Cover Page")
+
 ## Data Collection
 
 Multiband raster data can be collected from a variety of sources, the two most common of which are Landsat 8 and Sentinel 2 data. While Sentinel 2 data has a higher resolution (10 m), A significant amount of Sentinel data is held in long term storage (LTA) and is not always immediately available. Landsat 8 data is more easily acquired and can thus be more suitable despite its lower resolution (30 m).
@@ -16,7 +18,7 @@ Before running Sentinelsat, ensure that you have provided your Copernicus Open A
 
 The command line syntax I used to collect my data is as follows:
 
-`sentinelsat -g singapore_boundary.geojson --sentinel 2 --cloud 5 -d`
+```sentinelsat -g singapore_boundary.geojson --sentinel 2 --cloud 5 -d```
 
 Sentinelsat uses a user-defined shape file in order to search for scenes of interest, indicated by the `-g` flag. In general, most shape file formats are allowed, but it is important to make sure that the shape file CRS is in EPSG:4326, as this is the CRS in which Sentinel 2 data is stored. In the command above, I have limited results to Sentinel 2 data as well as data in which there is less than 5% cloud cover.There are also other flags that you can include such as specific periods in which to search (for example, 1st January 2015 to 1st January 2016; see documentation). The `-d` flag indicates that you want Sentinelsat to download your data - this flag can be omitted, in which case Sentinelsat will generate a list of scene IDs that meet the requirements you have outlined.
 
@@ -24,8 +26,38 @@ Sentinelsat data will be downloaded into the folder from which you are running t
 
 ### Landsatxplore
 
+The first and most pressing issue is that landsatxplore has some compatibility issues with `click`. Specifically, it needs `click<8.0`, but other geospatial programs require `click 8.1.7`. The best solution would be to run landsatxplore in its own specific environment.
 
+Once again, landsatxplore can be used from the command line. After providing your USGS username and password credentials as environment variables, I used the following syntax in the command line:
 
-Note: landsatxplore has some compatibility issues with click - specifically, it needs click<8.0, but other geospatial programs require click 8.1.7. Best solution would be to run landsatxplore in a different environment.
+```landsatxplore search --dataset landsat_ot_c2_l2 --location 1.3521 103.8198 --cloud 20 > results.csv```
 
-landsatxplore was used to collect landsat data for this area. The following command was used: landsatxplore search --dataset landsat_ot_c2_l2 --location lat long --cloud 20
+The command line call above searches for all datasets that meet the above conditions. The `--dataset` flag indicates what kind of data you would like to download (for example, level 1 or level 2 products; See documentation for examples), the `--location` flag is a point that you want to be contained in the scene provided in latitude and longitude, and the `--cloud` flag indicates the maximum allowed cloud cover. `> results.csv` indicates that you wish to save the results of this query in a CSV file.
+
+Downloading landsat scenes using landsatxplore is actually slightly more complicated than you would expect. The most pressing issue is that there appears to be an issue with landsatxplore error handling: in some cases, it will claim that the download failed when it actually succeeded. In these cases, however, the program will still throw an error and cease to continue with the rest of the scenes. You should use a try except block as a workaround as shown in the following code block:
+
+```
+from landsatxplore.earthexplorer import EarthExplorer
+
+# Sign in to earthexplorer
+ee = EarthExplorer("username", "password")
+
+# Read the aforementioned csv and get the scene IDs
+with open("landsat_IDs.csv") as f:
+    lines = [line.rstrip('\n') for line in f]
+f.close()
+
+for scene in lines:
+    # note that there appears to be an issue where the program will claim that the download failed but 
+    # it actually succeeded - despite this the program will throw an error and the script will not
+    # continue. As a workaround use a try except block to continue the loop despite the error being 
+    # thrown.
+
+    try:
+        ee.download(scene, output_dir='./data')
+    except:
+        print(f"{scene} failed to download!")
+        continue
+
+ee.logout()
+```

@@ -9,5 +9,6 @@ S2*
 # don't track the checkpoints
 .ipynb_checkpoints/*
 
-# don't track anything in the data folder
+# don't track anything in the data folders
 data/*
+data_cloud_imputing/*

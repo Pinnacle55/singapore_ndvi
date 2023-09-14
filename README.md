@@ -108,8 +108,101 @@ Another quick and easy way to find missing data is to run `sg_suburbs.unary_unio
 
 We can see that not only is there a small area missing but there are very small gaps between polygons, likely between the edges of adjacent polygons - these should be filled in prior to analysis.
 
+The first thing we should do is fix the missing suburb. To do this we manually create a rectangular Polygon that covers the entirety of the missing suburb. The coordinates of this Polygon can be easily found from the above visualization. We can then find the difference between this rectangular Polygon and the unary union of the rest of the suburbs to get a Polygon of the missing suburb.
+
+```
+from shapely.geometry import Polygon
+# We manually create a rectangular polygon
+# Define the coordinates of the polygon's exterior ring
+# the coords are given by bottom right, top right, top left, bottom left
+coordinates = [(362000, 147000), (362000, 149500), (364500, 149500), (364500, 147000)]
+manual_poly = Polygon(coordinates)
+# We then find the difference between this polygon and the unary_union of the entire dataset
+ty_poly = manual_poly.difference(sg_suburbs.unary_union)
+```
+
+We can then combine `ty_poly` (the polygon of the missing suburb) with the Polygon of the suburb that we want to merge it into. It is then simply a case of replacing the original geometry with the merged Polygon.
+
+```
+# Combine the old BT poly and the TY poly into a new merged polygon
+from shapely.ops import unary_union
+merged_poly = unary_union([ty_poly, bt_poly.iloc[0]])
+# Set the merged poly as the new BT poly
+sg_suburbs.loc[sg_suburbs["name"] == "Bukit Timah", "geometry"] = merged_poly
+```
+
+The next step is to get rid of the little gaps between polygons. These gaps are most likely because the polygons were not traced onto each other; indeed, you can't even see these gaps on the visualization shown above.
+
+The way I fixed this is to first create a Polygon of the boundary of the entire dataset called `sg_poly`. The difference between this and the unary union of the rest of the data gives us a multiPolygon of all the `missing` areas. For each Polygon in the missing multiPolygon, we find the suburb that is closest to that missing Polygon by calculating the distance from that Polygon to the centroid of every suburb in Singapore. We then combine the missing Polygon with the geometry of the closest suburb. We then replace the geometry of that suburb with the merged Polygon.
+
+```
+# Full polygon of singapore based on sg_suburbs
+sg_poly = Polygon([i for i in sg_suburbs.unary_union.exterior.coords])
+# multipolygon of all the missing bits
+missing = sg_poly.difference(sg_suburbs.unary_union)
+# for each missing polygon, find the nearest suburb (using centroid), then merge the two polygons
+for polygon in missing.geoms:
+    # This finds the geometry of the suburb that is CLOSEST to the missing polygon,
+    # and merges them
+    merged = unary_union([sg_suburbs.loc[sg_suburbs.centroid.distance(polygon).idxmin(), "geometry"], polygon])
+    
+    # Replace the original suburb polygon with the merge
+    sg_suburbs.loc[sg_suburbs.centroid.distance(polygon).idxmin(), "geometry"] = merged
+```
+
+An issue with this method is that it can sometimes leave extremely small missing polygons (on the order of centimeters) due to floating point errors with the unary union function. Thankfully this can be rectified very easily by buffering all the polygons by an extremely small amount (1 meter) and then unbuffering it by that same amount.
+
+```
+# buffer then unbuffer, save to original polygon
+sg_suburbs.loc[sg_suburbs.centroid.distance(missing).idxmin(), "geometry"] = sg_suburbs.loc[sg_suburbs.centroid.distance(missing).idxmin(), "geometry"].buffer(1).buffer(-1)
+```
+
+Using this cleaned Singapore suburb shape file I generated 2 GeoJSON files: ` singapore_boundary.geojson`, Polygon of the boundary of the study area, and `sg_suburbs_cleaned.geojson`, which contains the geometry and the name of all the suburbs in Singapore. The former will be used for cropping our Sentinel and Landsat images, while the latter will be used for zonal statistics.
+
 ## Data Preprocessing
 
 Regardless of whether you are using Sentinel 2 or Landsat 8 data, you should always conduct some basic preprocessing in order to reduce the amount of storage required for your projects as well as ensure that your projects are in a file format that is more conducive to subsequent analysis.
 
-The first thing that you should do is crop your data to your study area - this can significantly reduce the size of your raster files.
+The first thing that you should do is crop your data to your study area - this can significantly reduce the size of your raster files and makes future analyses much more computationally efficient.
+
+You can do this one of two ways: the first thing you can do is use gdal command line functions. Gdal is extremely powerful - honestly, you can pretty much do anything you want to a raster file using gdal. However, because it is a primarily command line based program (that there are Python wrappings for gdal but they are quite complicated), you will have to run the scripts from the command line using Anaconda prompt.
+
+The second way you can do it is to use `EarthPy`. This is a module that makes cropping and stacking rasters extremely easy. It does not have the fine control that gdal has — for example, you can't control the output resolution nor the target CRS — but in cases where your data comes from the same source such as the Earth Explorer database or the Copernicus SciHub, `EarthPy` takes only one or two lines of code to crop and stack your rasters.
+
+The first step to cropping is to identify the area that you want to crop your raster to - in the case of `EarthPy` and `rasterio`, you will need to provide a shapefile that describes the extent of the area that you want to crop to. If you are using gdal, then you can provide this extent either in coordinates or as a shapefile.
+
+In this case we are going to use the `singapore_boundary.geojson` shapefile we generated in the previous section. After loading it in using Geo pandas the first thing we need to do is to make sure that the CRS of this shape file is the same as the CRS of the raster files. In this case, I already know the CRS that I want to target, but in cases where you don't know the CRS, you will need to load in your raster data, identify the CRS in the profile metadata, then reproject your shapefile to that CRS.
+
+Following that, you can use the shapefile as is. In cases where the shape file is not rectangular, `EarthPy` will crop the raster to a rectangular area and anything outside the shape file will be assigned a nodata attribute. In my case, however, I want to crop the rest to a rectangular area. I can get the corner coordinates of my shape file by using the `total_bounds` attribute. I can then manually use shapely's box function to create a rectangular Polygon.
+
+```
+from shapely.geometry import box
+# Set target_shapefile to the appropriate coordinates
+# Create a box from the total_bounds of the shapefile
+target_shapefile = gpd.read_file("singapore_boundary.geojson")
+target_shapefile = target_shapefile.to_crs("EPSG:32648")
+xmin, ymin, xmax, ymax = target_shapefile.total_bounds
+target_shapefile = box(np.floor(xmin), np.floor(ymin), np.ceil(xmax), np.ceil(ymax))
+```
+
+The following example uses landsat data, but this workflow can be easily applied to Sentinel data. Once we have our shape file, we need to get the file paths of all the rasters that we want to crop. We can do this using `glob` and `os.path`. Assuming that you have identified the filepaths of all rasters that you want to crop (remember, these rasters must have the same size, CRS, and resolution), you can run the simple `es.crop_all` function to crop all of the rasters.
+
+```
+import earthpy.spatial as es
+# I want to crop both band data as well as the QA pixel raster for cloud detection
+    paths_to_crop = stack_band_paths + stack_qa_paths
+    
+    # This function will crop all of the specified bands and write them into the specified output 
+    # directory. it returns a list of file paths which you can then use as the input for es.stack 
+    # in order to stack the bands into a multi band raster.
+    
+    # note that this expects a list of polygons, so you need to put it in a list even if its just the
+    # one polygon
+    band_paths = es.crop_all(
+        paths_to_crop, output_dir, [target_shapefile], overwrite=True
+    )
+    
+    band_paths_list.append(band_paths)
+```
+
+The `es.crop_all` function returns a list of all the file paths to the cropped rasters. This list can be easily fed into the `es.stack` function, which stacks all of the files in the given file paths into a single multiband raster. The `out_path` argument tells the function where you want to save this multiband raster.

@@ -159,7 +159,7 @@ sg_suburbs.loc[sg_suburbs.centroid.distance(missing).idxmin(), "geometry"] = sg_
 
 Using this cleaned Singapore suburb shape file I generated 2 GeoJSON files: ` singapore_boundary.geojson`, Polygon of the boundary of the study area, and `sg_suburbs_cleaned.geojson`, which contains the geometry and the name of all the suburbs in Singapore. The former will be used for cropping our Sentinel and Landsat images, while the latter will be used for zonal statistics.
 
-## Data Preprocessing
+## Data Preprocessing - Raster Cropping
 
 Regardless of whether you are using Sentinel 2 or Landsat 8 data, you should always conduct some basic preprocessing in order to reduce the amount of storage required for your projects as well as ensure that your projects are in a file format that is more conducive to subsequent analysis.
 
@@ -190,19 +190,63 @@ The following example uses landsat data, but this workflow can be easily applied
 ```
 import earthpy.spatial as es
 # I want to crop both band data as well as the QA pixel raster for cloud detection
-    paths_to_crop = stack_band_paths + stack_qa_paths
-    
-    # This function will crop all of the specified bands and write them into the specified output 
-    # directory. it returns a list of file paths which you can then use as the input for es.stack 
-    # in order to stack the bands into a multi band raster.
-    
-    # note that this expects a list of polygons, so you need to put it in a list even if its just the
-    # one polygon
-    band_paths = es.crop_all(
-        paths_to_crop, output_dir, [target_shapefile], overwrite=True
-    )
-    
-    band_paths_list.append(band_paths)
+paths_to_crop = stack_band_paths + stack_qa_paths
+
+# This function will crop all of the specified bands and write them into the specified output 
+# directory. it returns a list of file paths which you can then use as the input for es.stack()
+# in order to stack the bands into a multiband raster.
+
+# note that this expects a list of polygons, so you need to put it in a list even if its just the
+# one polygon
+band_paths = es.crop_all(
+    paths_to_crop, output_dir, [target_shapefile], overwrite=True
+)
+
+band_paths_list.append(band_paths)
 ```
 
 The `es.crop_all` function returns a list of all the file paths to the cropped rasters. This list can be easily fed into the `es.stack` function, which stacks all of the files in the given file paths into a single multiband raster. The `out_path` argument tells the function where you want to save this multiband raster.
+
+```
+for scene in band_paths_list:
+    # Note that we use folder[:-1] - we don't want to add the QA PIXEL raster to our stacked raster
+    stack, metadata = es.stack(scene[:-1], out_path = out_path)
+```
+
+We have now successfully cropped the extremely large LANDSAT scenes to our  study area. As mentioned, this significantly decreases the file size on disk (in my case, it reduced it from 800 MB for the entire dataset to approximately 30 MB for the stacked multiband raster).
+
+## Data Preprocessing - Cloud Detection
+
+One of the major issues with satellite imagery is the presence of clouds. Clouds can obscure the surface from view, preventing the analysis of the ground itself. This is often why cloud cover is included in the metadata of both Sentinel and LANDSAT images. Consequently, the removal of clouds is an important preprocessing step that allows researchers to get a clearer view of the study area in order to make conclusions, especially in time series analyses. 
+
+At the present day, clouds and cloud shadow (CCS) detection has improved by leaps and bounds due to the wealth of available data as well as improvements in machine learning technology, which allows algorithms to more accurately and precisely predict the presence of clouds in a data set.
+
+Depending on whether you are using Sentinel or LANDSAT data your options for cloud detection will be different. In the case of Sentinel data, there are several third party tools that can be used for cloud detection; in this particular case I chose to use S2cloudless, which is a relatively easy to use module that can be run on any Sentinel scene. It is significantly better at cloud detection than the cloud mask packaged with Sentinel 2 products.
+
+It is much easier to do cloud detection on LANDSAT images since LANDSAT Level 2 products automatically come bundled with a QA PIXEL raster that contains information about the scene, including clouds cloud shadow and water areas. LANDSAT data is processed using the CFMask algorithm, which is considered to be relatively robust (although more comprehensive cloud masking algorithms have since been developed). Consequently, the relatively robust QA pixel raster that comes with LANDSAT data generally precludes the need for the use of third party tools.
+
+### Cloud Detection for Sentinel Data - S2Cloudless
+
+First, let's take a look at the cloud mask that comes packaged with Sentinel data. I'm not entirely sure where this cloud mask comes from or how Sentinel creates this cloud mask, but it's a good practice just to take a look and see how good/bad it is.
+
+The Sentinel cloud mask is a multiband raster containing several layers - each layer is a binary mosque that indicates the presence of clouds, cirrus, or snow. In our case, since we are looking at Singapore a tropical country we can pretty much combine all of these layers into a single layer without losing too much information.
+
+```
+# Read in the cloud mask
+dataset = rio.open("20230316_IMG_DATA\\MSK_CLASSI_B00_UPSAMPLED_CROPPED.tif")
+data = dataset.read()
+
+# We'll mask anything that is present in any layer
+# If there is a 1 (i.e., positive detection) in any layer, the mean along the 0th-axis will be > 0.
+data_means = np.mean(data, axis = 0)
+
+# Set all pixels with means > 0 to 1. This creates binary masks that indicates the presence of any contaminant (cloud, snow, or cirrus).
+data_means[data_means != 0] = 1
+
+show(data_means)
+```
+
+
+
+
+

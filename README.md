@@ -246,7 +246,87 @@ data_means[data_means != 0] = 1
 show(data_means)
 ```
 
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/4dc8228f55336beee7ddb3ff3bee1c23a6dffb97/Images/Singapore%20TCC.png?raw=True "Singapore Original")
 
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/4dc8228f55336beee7ddb3ff3bee1c23a6dffb97/Images/Sentinel%20Default%20Cloud%20Mask.png?raw=True "Sentinel Default Cloud Mask")
 
+It's pretty clear that the Sentinel cloud mask is not particularly good. We can visualize this in a more direct way by overlaying the cloud mask on top of the true color composite in order to see which clouds the cloud mask detected.
 
+```
+# Compare to the cloud mask provided by sentinel2 itself
+
+_, ax = plt.subplots(nrows=1, ncols=1, figsize=(15, 15))
+ax.imshow(true_color_image)
+ax.imshow(data_means, cmap="gnuplot", alpha=0.3 * data_means)
+```
+
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/4dc8228f55336beee7ddb3ff3bee1c23a6dffb97/Images/Singapore%20Sentinel%20Cloud%20Mask.png?raw=True "Sentinel Default Cloud Mask")
+
+It is clear that we cannot rely on the cloud mask provided by Sentinel itself. Thankfully, there are several easy-to-use cloud detection algorithms that can be used for Sentinel data. One of these is [S2cloudless](https://github.com/sentinel-hub/sentinel2-cloud-detector), which uses deep learning algorithms to identify clouds in Sentinel data. S2cloudless can either be used on data downloaded from site habit itself, or it comes prepackaged as an available layer when you download data from Sentinel Hub. It is important to note, however, that S2 cloudless does not detect the presence of cloud shadow.
+
+```
+from s2cloudless import S2PixelCloudDetector, download_bands_and_valid_data_mask
+
+# Instantiate cloud detection model
+cloud_detector = S2PixelCloudDetector(threshold=0.4, average_over=4, dilation_size=2, all_bands=True)
+
+# Import stacked raster of all Sentinel bands - it is important to note that s2cloudless uses reflectances for its calculations, so the Sentinel bands must be converted to reflectances beforehand.
+# In addition, it is EXTREMELY important to note that after October 26, 2021, Sentinel changed their DN-reflectance calculation such that reflectances = (data - 1000) / 10000. Prior to this date, the algorithm was reflectance = data / 10000
+src = rio.open("SINGAPORE_20230316_STACKED.tif")
+dataset = src.read()
+
+# Move the band axis to the back
+dataset_image = rio.plot.reshape_as_image(dataset)
+
+# Get cloud probability maps
+cloud_prob = cloud_detector.get_cloud_probability_maps(dataset_image[np.newaxis, ...])
+```
+
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/4dc8228f55336beee7ddb3ff3bee1c23a6dffb97/Images/Singapore%20S2%20Cloudless%20Cloud%20Mask.png?raw=True "Sentinel S2Cloudless Mask")
+
+You can see that the S2 cloud mask is much better than the default cloud mask provided by Sentinel. Furthermore, the S2 cloud mask algorithm allows you to specify your own threshold regarding how aggressive or conservative you would like the program to be when detecting clouds. In this particular case I just used the default values and that works quite well.
+
+As previously mentioned, however, s2cloudless does not detect the presence of cloud shadow - depending on your ultimate goals this may or may not be an issue. 
+
+### Cloud Detection for LANDSAT Data - QA Pixel Rasters
+
+Cloud detection for LANDSAT data is much simpler than Sentinel data because the default cloud mask packaged with LANDSAT Level 2 products is relatively good. This information is contained within the QA pixel raster, which is actually a 16-bit raster that encodes a significant amount of information about the scene. Specifically, the 16 bits are used to code the presence of clouds snow cirrus and water as well as the confidence of the algorithm with respect to each of these contaminants. 
+
+To utilize this QA pixel raster, you will need to encode the 16-bit DNs into binary and then use the [lookup table provided by LANDSAT](https://d9-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/media/files/LSDS-1619_Landsat8-9-Collection2-Level2-Science-Product-Guide-v5.pdf) to interpret the results. While this can seem a bit annoying, this actually makes it relatively easy for you to define your own algorithm - for example, you can create a function that parses the QA pixel raster to create a binary mask that masks out water and clouds only, leaving snow unmasked. Furthermore, the fact that the 16 bit data also encodes confidence levels allows you to generate more aggressive or more conservative cloud masks depending on your needs. 
+
+```
+def qa_pixel_interp_conservative(number):
+    '''
+    Helps interpret the 16bit data in the landsat qa pixels
+    
+    returns True if there is high confidence cirrus, snow/ice, cloud shadow, OR clouds
+    '''
+    binary = bin(number)[2:].zfill(16)
+    
+    # if high confidence cirrus, snow/ice, cloud shadow, and clouds
+    # 01 - low, 10 - medium, 11 - high
+    if int(binary[:2]) > 10:
+        return True
+    elif int(binary[2:4]) > 10:
+        return True
+    elif int(binary[4:6]) > 10:
+        return True
+    elif int(binary[6:8]) > 10:
+        return True
+    else:
+        return False
+```
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/4dc8228f55336beee7ddb3ff3bee1c23a6dffb97/Images/Landsat%20TCC.png?raw=True "Landsat TCC")
+
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/4dc8228f55336beee7ddb3ff3bee1c23a6dffb97/Images/Landsat%20Cloud%20Mask%20Conservative.png?raw=True "Conservative Cloud Detection")
+
+You'll notice from the images above that the LANDAST QA pixel band does not only detect clouds but also detects cloud shadows.
+
+## Preprocessing - Cloud Imputation / Mosaicking
+
+For some use cases, it is sufficient to have a binary cloud mask raster. You can then create a masked array using your cloud mask in order to remove any pixels that are affected by clouds. However, in some cases this is insufficient for your analysis. For example, in time series analyses, you want to see how the entire scene changes over time - if there are clouds obstructing your view of the scene, then you would not be able to make any good conclusions about how the landscape has changed over time.
+
+In cases where you need to have a full, clear view of the scene you will need figure out some way of imputing the missing data (i.e., the areas covered by clouds). In some cases, you can use an average of the surrounding pixels, or you can use some interpolation methods that are available in modules such as scipy. However, in cases where the missing areas are exceptionally large such as in very cloudy areas like Singapore, these interpolation methods would introduce serious biases. 
+
+To get around this, you can use a technique known as mosaicking - this is a process by which multiple overlapping images are stitched together to form a final image. Musicking is not only used in cloud removal processes - there can be any number of reasons why you would want to mosaic an image such as improving the resolution of an image or replacing certain parts of an image that have higher quality data. In this case, we will be using our cloud masks to identify areas that need to be patched in an image and replacing those areas with bits of another image in which those areas are not covered by clouds.
 

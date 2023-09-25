@@ -380,4 +380,38 @@ As you can see, the mosaicking has significantly improved the quality of the ima
 
 ## NDVI Calculations
 
+The normalised difference vegetation index (NDVI) is classic spectral index used to quantify the health and density of vegetation using multispectral sensor data. It is a popular index because it is easy to calculate – requiring only the red and near infrared bands – and is also very easy to interpret. The NDVI has a value between -1 and 1. Areas with healthy vegetation will have an NDVI of 1, areas without vegetation have an NDVI of 0, and water bodies will have a negative NDVI value.
+
+The NDVI is calculated as follows: (NIR - Red) / (NIR + Red), where NIR and Red refer to the reflectance of the near-infrared and red bands, respectively. This is easily calculated by slicing the stacked multiband raster. Note that if you have not converted the DN numbers to reflectances, you will need to do so at this step. This is a relatively simple function as shown [here](https://d9-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/media/files/LSDS-1619_Landsat8-9-Collection2-Level2-Science-Product-Guide-v5.pdf):
+
+```
+ndvi_dict = {}
+years = [str(year) for year in range(2013,2023)]
+
+for idx, image in enumerate(images):
+    with rio.open(image) as src:
+        # import red and nir bands
+        nir = src.read(5, masked = True)
+        red = src.read(4, masked = True)
+    src.close()
+
+    # Adjust to reflectance using the given scale factors
+    nir = nir * 0.0000275 + -0.2
+    red = red * 0.0000275 + -0.2
+
+    # ndvi calculation
+    ndvi = (nir - red) / (nir + red)
+
+    # Landsat 8 Level 2 products have an issue where water can result in negative reflectance
+    # in such cases, set NDVI to -1
+    ndvi[(nir < 0) | (red < 0)] = -1
+    
+    # Append raster to dictionary
+    ndvi_dict[years[idx]] = ndvi
+```
+
+One important thing to note is that LANDSAT Level two products have an unusual property where water can sometimes result in negative reflectances. Well this is not an issue for NDVI analyses, it is important to keep in mind for other analysis–for example, if you are looking to determine sediment content in water using satellite imagery. In such cases, you may want to use Level 1 data and manually transform it using top-of-atmosphere reflectance calculations.
+
+NDVI maps generally look like the following:
+
 

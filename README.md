@@ -414,4 +414,12 @@ One important thing to note is that LANDSAT Level two products have an unusual p
 
 NDVI maps generally look like the following:
 
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/e3cbee49ea4a2aac9cac6a3bd40803b8c08c175a/Images/Singapore%20NDVI%20Landsat%20Masked.png?raw=True "NDVI")
+
+In this particular case, I masked out both the clouds and any water bodies. You can see that green areas indicate areas where there is lush vegetation and red areas indicate locations where no vegetation is growing. Note that the scale on which you present your NDVI data makes a big difference - in this particular case I used a scale from 0 to 1 even though and DVI can range from -1 to 1. Without this modified scale, area without vegetation would look yellow, while water bodies will be red. This particular scale thus more clearly highlights areas without vegetation.
+
+## Presenting Data - Animations
+
+One of the most compelling ways of presenting time series data is through the use of animations. This is much more effective than a series of graphs at showing the changes in the scene over time. Using matplotlib to animate graphs in Python can be a little frustrating, but it is relatively simple using matplotlib's inbuilt animation classes.
+
 

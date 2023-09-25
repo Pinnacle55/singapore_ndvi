@@ -320,7 +320,7 @@ def qa_pixel_interp_conservative(number):
 
 ![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/4dc8228f55336beee7ddb3ff3bee1c23a6dffb97/Images/Landsat%20Cloud%20Mask%20Conservative.png?raw=True "Conservative Cloud Detection")
 
-You'll notice from the images above that the LANDAST QA pixel band does not only detect clouds but also detects cloud shadows.
+You'll notice from the images above that the LANDAST QA pixel band does not only detect clouds but also detects cloud shadows. In fact, you can even use the QA pixel band to remove any water bodies that were detected by FMask.
 
 ## Preprocessing - Cloud Imputation / Mosaicking
 
@@ -328,5 +328,56 @@ For some use cases, it is sufficient to have a binary cloud mask raster. You can
 
 In cases where you need to have a full, clear view of the scene you will need figure out some way of imputing the missing data (i.e., the areas covered by clouds). In some cases, you can use an average of the surrounding pixels, or you can use some interpolation methods that are available in modules such as scipy. However, in cases where the missing areas are exceptionally large such as in very cloudy areas like Singapore, these interpolation methods would introduce serious biases. 
 
-To get around this, you can use a technique known as mosaicking - this is a process by which multiple overlapping images are stitched together to form a final image. Musicking is not only used in cloud removal processes - there can be any number of reasons why you would want to mosaic an image such as improving the resolution of an image or replacing certain parts of an image that have higher quality data. In this case, we will be using our cloud masks to identify areas that need to be patched in an image and replacing those areas with bits of another image in which those areas are not covered by clouds.
+To get around this, you can use a technique known as mosaicking - this is a process by which multiple overlapping images are stitched together to form a final image. Mosaicking is not only used in cloud removal processes - there can be any number of reasons why you would want to mosaic an image such as improving the resolution of an image, replacing certain parts of an image that have higher quality data, or filling in nodata gaps. In this case, we will be using our cloud masks to identify areas that need to be patched in an image and replacing those areas with bits of another image in which those areas are not covered by clouds.
+
+First, we need to download the data to be mosaicked. This requires us to get multiple images of the same scene over different timescales. This really depends on your use case as well as the availability of data - for example, if you're looking at yearly data, then your images can be months apart. However, if you're looking at seasonal data, then you want your images to be at most weeks or even days apart. This may not be possible depending on your data source: for example, LANDSAT images are taken once every 17 days.
+
+Once you've generated multiband rasters for each of your images, stack the multiband rasters into a 4D numpy array (the four dimensions are date, spectral band, height, width). Note that the order of the array matters - ideally you want to fill in missing data with data from a scene that was as close to the original scene (temporally) as possible (i.e., you want to fill in the image with bits of an image taken 3 days later rather than 7 days later); I'll refer to this as the `stacked_mb_raster`. Similarly, stack the QA pixel rasters into a three-dimensional numpy array (only 3D because the QA pixel raster is comprised only of a single band) - we refer to this as the `stacked_qa_raster`. 
+
+We then turn the 3D QA pixel raster into a binary 3D cloud mask by running our parser function - anything flagged as a contaminant is given a value of 1, while clean pixels are given a value of 0.
+
+```
+# classify the QA raster using conservative cloud estimates
+unique_vals = np.unique(stacked_qa_raster)          # find all unique 16bit values
+masked_vals = apply_array_func(func, unique_vals)   # runs the parser on each unique element in the array
+masked_vals = unique_vals[masked_vals]              # get a 1D array of all 16bit values we'd like to mask
+cl_mask = np.isin(stacked_qa_raster, masked_vals)   # create the binary mask based on the flagged values identified in the previous step
+```
+
+We now have a stacked cl_mask (date, height, width) containing a binary cloud mask for each multiband raster in our study period. 
+
+Convert the stacked multiband rasters into np.float32 - LANDSAT data comes as int16, which does not accept np.nan as a nodata value; converting it to np.float32 fixes this issue. We will then mask the `stacked_mb_raster` with the `cl_mask` that we generated, giving us a masked 4D numpy array. We then down the array layer by layer (i.e., date by date), and we will impute any missing data with the value of the pixel in the scene below it (assuming that the pixel is also not missing). This sounds complicated but is easily accomplished.
+
+```
+# The base scene is the first layer (2022-04-01)
+base_scene = masked_mb_raster[0, ...]
+
+# for each scene
+for layer_num in range(masked_mb_raster.shape[0] - 1):
+    # Takes the base scene and fills the missing with stuff from layer 2
+    result = np.ma.filled(base_scene, 
+                          # this fills missing data in layer 2 with nans
+                          # if there is missing data in the same coord in both layers, then 
+                          # then the result array will have a np.nan in that coord
+                          np.ma.filled(masked_mb_raster[layer_num + 1, :], fill_value = np.nan)
+                         )
+    
+    # 'result' is an unmasked array containing np.nan values. We want to turn result back into a masked array,
+    # where np.nan are the values to be masked.
+    result_mask = np.isnan(result)
+
+    # Rename it base_scene for the loop to work
+    base_scene = np.ma.masked_array(result, result_mask)
+```
+
+Eventually, the `base_scene` will be a single masked 3D raster with as many pixels filled as possible. It is important to note that there may be some pixels are remain unfilled - these are pixels that were not clear in any of the images. The results of the mosaicking can be seen below:
+
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/4dc8228f55336beee7ddb3ff3bee1c23a6dffb97/Images/Landsat%20TCC.png?raw=True "Landsat TCC")
+
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/7d9578ca877d220811b166d175888a17e86f364c/Images/Singapore%20Imputed%20Clouds.png?raw=True "Singapore Imputed Clouds")
+
+As you can see, the mosaicking has significantly improved the quality of the image and helped to remove several clouds. Note that there are still some areas with missing data, but overall you are able to get a much better picture of the scene compared to the unprocessed image.
+
+## NDVI Calculations
+
 

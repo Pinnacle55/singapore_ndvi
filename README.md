@@ -422,4 +422,42 @@ In this particular case, I masked out both the clouds and any water bodies. You 
 
 One of the most compelling ways of presenting time series data is through the use of animations. This is much more effective than a series of graphs at showing the changes in the scene over time. Using matplotlib to animate graphs in Python can be a little frustrating, but it is relatively simple using matplotlib's inbuilt animation classes.
 
+```
+from matplotlib.animation import FuncAnimation
+fig, ax = plt.subplots(figsize = (16,12))
+ax.axis("off")
+
+# Set the colorbar values
+vmin = 0
+vmax = 1
+
+# Define a function that describes how the graph should change with each frame
+def update(frame):
+    year = years[frame]
+    
+    im = ax.imshow(ndvi_dict[year], cmap = "RdYlGn", vmin = vmin, vmax = vmax)
+    
+    ax.set_title(f"{year}", fontsize = 24)
+
+    # manually create axes to store the colorbar
+    cax = fig.add_axes([ax.get_position().x1+0.01,ax.get_position().y0,0.02,ax.get_position().height])
+    
+    fig.colorbar(im, cax=cax)
+    
+animation = FuncAnimation(fig, update, frames=len(years), repeat=True, interval = 1000)
+
+plt.subplots_adjust(
+    top=0.91,
+    bottom=0.02,
+    left=0.008,
+    right=0.932,
+    hspace=0.2,
+    wspace=0.2
+)
+
+# Save the animation
+animation_file = f'singapore_ndvi_postmosaic_animation_scaled.gif'
+animation.save(animation_file, writer='pillow')
+```
+
 

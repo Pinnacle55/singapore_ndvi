@@ -460,4 +460,34 @@ animation_file = f'singapore_ndvi_postmosaic_animation_scaled.gif'
 animation.save(animation_file, writer='pillow')
 ```
 
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/dffd891bbf38c1c78ed13220c2a36dc225fc2d17/Images/singapore_ndvi_postmosaic_animation_scaled.gif)
 
+## Additional analyses - NDVI per administrative region
+
+In addition to visualising NDVI information overtime, we can use zonal statistics to conduct more fine-grained analysis depending on our use cases. For example, you can create a visualisation that shows how NDVI has changed within each administrative region over time. You can do this easily using the `rasterstats` module, which is excellent for calculating zonal statistics. We will also need our administrative region shapefile that we cleaned earlier. 
+
+```
+# get zonal stats for all years
+for key in ndvi_dict:
+    sg_ndvi = rasterstats.zonal_stats(
+        "sg_suburbs_cleaned.geojson", # note that rasterstats wants a path to a shapefile
+        f"{key}_NDVI_MASKED.tif",     # but accepts ndarrays or a path to a raster file
+
+        # Note that add_stats will calculate the added stats in addition to the default stats which 
+        # include min, Max, mean, and count
+        
+        # note that rasterstats automatically runs masked versions of the basic stats
+        add_stats = {'masked_mean':np.ma.mean, "masked_median": np.ma.median}
+    )
+
+    # zonal_stats returns a list of dictionaries that can be easily turned into a dataframe
+    sg_ndvi = pd.DataFrame(sg_ndvi)
+    sg_ndvi = sg_ndvi.add_prefix(f"{key}_")
+
+    # Concatenate data to original geodataframe
+    sg_suburbs = pd.concat([sg_suburbs, sg_ndvi], axis = 1)
+```
+
+Once you have generated the zonal statistics, it is relatively simple to use geopandas to plot those statistics.
+
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/dffd891bbf38c1c78ed13220c2a36dc225fc2d17/Images/NDVI%20by%20Administrative%20Boundary.png?raw=True "NDVI Admin Boundary")

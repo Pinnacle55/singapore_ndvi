@@ -548,4 +548,28 @@ ndvi_df = pd.DataFrame(results)
 
 `ndvi_df` effectively contains a count of the number of urban and healthy vegetation pixels in each administrative area. It is relatively simple to convert this into a proportion using pandas algebra, and then plot this information using geopandas.
 
+```
+ndvi_df["prop"] = ndvi_df["Healthy Vegetation"] / ndvi_df.sum(axis = 1)
 
+sg_suburbs_ndvi = pd.concat([sg_suburbs, ndvi_df], axis = 1)
+
+fig, ax = plt.subplots(figsize = (32, 18))
+
+show(ndvi_masked, transform = profile["transform"], ax = ax)
+sg_suburbs_ndvi.plot(column = "prop", cmap = "RdYlGn", vmin = 0, vmax = 1, legend = True, 
+                    edgecolor = "black", ax = ax, alpha = 0.7)
+
+sg_suburbs_ndvi.apply(lambda x: ax.annotate(
+    text = f"{x['name']}\n{round(x['prop'], 3)}", 
+    xy = x["geometry"].centroid.coords[0], 
+    ha = "center"
+), axis = 1);
+
+ax.set_title("Proportion of Administrative Region with NDVI > 0.5", fontsize = 24)
+```
+
+![alt_text](https://github.com/Pinnacle55/singapore_ndvi/blob/c2bd2b76970e7328d3442ca69b5c5c9259d2a106/Images/Singapore%20Healthy%20Vegetation%20Prop%20and%20Map.png?raw=True "Healthy Vegetation Prop")
+
+Of course, maps are not the only way to present data - once you have stored your data in a GeoDataFrame, you can leverage the charting capabilities available to variety of plotting software such as matplotlib or seaborn in order to present the data in the most effective way. For example, here is a line graph showing the change in proportion of healthy vegetation in a select group of administrative regions over the last decade in Singapore.
+
+![alt_text](https://github.com/Pinnacle55/singapore_ndvi/blob/c2bd2b76970e7328d3442ca69b5c5c9259d2a106/Images/Singapore%20Healthy%20Vegetation%20Line%20Graph.png?raw=True "Healthy Vegetation Line")

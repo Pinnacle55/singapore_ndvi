@@ -488,6 +488,88 @@ for key in ndvi_dict:
     sg_suburbs = pd.concat([sg_suburbs, sg_ndvi], axis = 1)
 ```
 
-Once you have generated the zonal statistics, it is relatively simple to use geopandas to plot those statistics.
+Once you have generated the zonal statistics, it is relatively simple to use geopandas to plot those statistics. Remember to use an appropriate scale.
+
+```
+fig, ax = plt.subplots(figsize = (32,18))
+ax.axis("off")
+
+im = sg_suburbs.plot(ax = ax, column = "2013_mean", cmap = "RdYlGn", vmin = 0, vmax = 1, edgecolor = "black")
+
+# Annotate municipality names
+sg_suburbs.apply(lambda x: ax.annotate(text = x["name"], 
+                                   xy = x["geometry"].centroid.coords[0],
+                                   ha = "center"), axis = 1)
+# colorbar
+cax = fig.add_axes([ax.get_position().x1+0.01,ax.get_position().y0,0.02,ax.get_position().height])
+fig.colorbar(im, cax=cax)
+
+ax.set_title("Singapore 2013 Mean NDVI by Administrative Region", fontsize = 24)
+
+plt.show();
+```
 
 ![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/dffd891bbf38c1c78ed13220c2a36dc225fc2d17/Images/NDVI%20by%20Administrative%20Boundary.png?raw=True "NDVI Admin Boundary")
+
+## Additional Analyses - Thresholding
+
+As the NDVI data is start in the form of numpy arrays, it is relatively easy to manipulate these numpy arrays in order to obtain the data that you are interested in. For example, let's say that you are interested in the proportion of healthy vegetation in each administrative region (i.e., the area of each administrative region that has an NDVI > 0.5). In this case, you can very easily create a mask for the NDVI numpy array. Alternatively, you can transform the NDVI array into a binary raster, where it is 0 in areas where NDVI < 0.5 and 1 in areas where NDVI > 0.5. You can then map this information.
+
+```
+# Threshold NDVI to 0.5
+ndvi_threshold = ndvi < 0.5
+ndvi_masked = np.ma.masked_array(ndvi, ndvi_threshold)
+
+fig, ax = plt.subplots(figsize = (32,18))
+
+# remember that you need to provide the affine in order to plot the raster in the right place
+show(ndvi_masked, transform = profile["transform"], ax = ax)
+sg_suburbs.plot(ax = ax, edgecolor = "black", color = "none")
+```
+
+![alt text](https://github.com/Pinnacle55/singapore_ndvi/blob/c72fe55479b9d1fe28886d3b287da5ffa52ccf13/Images/Singapore%20Healthy%20Vegetation%20Map.png?raw=True "Healthy Vegetation Map")
+
+You can then use `rasterstats` to calculate the relative areas of urban and healthy vegetation. Specifically, `rasterstats` the ability to calculate categorical zonal statistics as long as you provide an appropriate mapping for the categorical raster. In this case, we can apply the binary raster transform described above and feed `rasterstats` a dictionary that describes the binary raster.
+
+```
+cat_map = {0: "Urban", 1: "Healthy Vegetation"}
+
+results = rasterstats.zonal_stats(
+    "sg_suburbs_cleaned.geojson",
+    ndvi_prop.squeeze(),
+    nodata = np.nan,
+    affine = profile["transform"],
+    categorical = True,
+    category_map = cat_map
+)
+
+ndvi_df = pd.DataFrame(results)
+```
+
+`ndvi_df` effectively contains a count of the number of urban and healthy vegetation pixels in each administrative area. It is relatively simple to convert this into a proportion using pandas algebra, and then plot this information using geopandas.
+
+```
+ndvi_df["prop"] = ndvi_df["Healthy Vegetation"] / ndvi_df.sum(axis = 1)
+
+sg_suburbs_ndvi = pd.concat([sg_suburbs, ndvi_df], axis = 1)
+
+fig, ax = plt.subplots(figsize = (32, 18))
+
+show(ndvi_masked, transform = profile["transform"], ax = ax)
+sg_suburbs_ndvi.plot(column = "prop", cmap = "RdYlGn", vmin = 0, vmax = 1, legend = True, 
+                    edgecolor = "black", ax = ax, alpha = 0.7)
+
+sg_suburbs_ndvi.apply(lambda x: ax.annotate(
+    text = f"{x['name']}\n{round(x['prop'], 3)}", 
+    xy = x["geometry"].centroid.coords[0], 
+    ha = "center"
+), axis = 1);
+
+ax.set_title("Proportion of Administrative Region with NDVI > 0.5", fontsize = 24)
+```
+
+![alt_text](https://github.com/Pinnacle55/singapore_ndvi/blob/c2bd2b76970e7328d3442ca69b5c5c9259d2a106/Images/Singapore%20Healthy%20Vegetation%20Prop%20and%20Map.png?raw=True "Healthy Vegetation Prop")
+
+Of course, maps are not the only way to present data - once you have stored your data in a GeoDataFrame, you can leverage the charting capabilities available to variety of plotting software such as matplotlib or seaborn in order to present the data in the most effective way. For example, here is a line graph showing the change in proportion of healthy vegetation in a select group of administrative regions over the last decade in Singapore.
+
+![alt_text](https://github.com/Pinnacle55/singapore_ndvi/blob/c2bd2b76970e7328d3442ca69b5c5c9259d2a106/Images/Singapore%20Healthy%20Vegetation%20Line%20Graph.png?raw=True "Healthy Vegetation Line")

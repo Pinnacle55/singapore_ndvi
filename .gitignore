@@ -13,3 +13,5 @@ S2*
 data/*
 data_cloud_imputing/*
 data_collated/*
+outputs/*
+__pycache__/*
